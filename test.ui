@@ -31,9 +31,16 @@
         <item>
          <layout class="QVBoxLayout" name="verticalLayout_2">
           <item>
-           <widget class="QPushButton" name="btn_addTorrent">
+           <widget class="QPushButton" name="btn_addMagnetLink">
             <property name="text">
              <string>Add MagnetLink</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btn_addTorrentFile">
+            <property name="text">
+             <string>Add Torrent File</string>
             </property>
            </widget>
           </item>
