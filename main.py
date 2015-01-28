@@ -18,10 +18,16 @@ class TestWidget(QtGui.QMainWindow, main_window):
         self.btn_addMagnetLink.clicked.connect(self.btn_addMagnetLink_clicked)
         self.btn_deleteTorrent.clicked.connect(self.btn_deleteTorrent_clicked)
         self.btn_addTorrentFile.clicked.connect(self.btn_addTorrentFile_clicked)
-        #events
 
-        self.ts = TorrentSession(self.additem)
+        self.ts = TorrentSession(self)
+
+
         self.ts.start()
+
+        self.ts.statusbar.connect(self.statusBar.showMessage)
+
+        #self.show_status("testing")
+
 
     @QtCore.pyqtSlot()
     def btn_addMagnetLink_clicked(self):

@@ -6,11 +6,14 @@ import time
 import os
 import sqlite3
 import logging
+import datetime
 
-from PyQt4 import QtCore
+from PyQt4 import QtCore, QtGui
 
 class TorrentSession(QtCore.QThread):
-    def __init__(self, additem, savepath="./"):
+    statusbar = QtCore.pyqtSignal(str)
+
+    def __init__(self, parent, savepath="./"):
         QtCore.QThread.__init__(self)
         logging.basicConfig(filename='torrent.log', level=logging.DEBUG)
         self.statdb = 'stat.db'
@@ -23,7 +26,9 @@ class TorrentSession(QtCore.QThread):
         self.session.set_alert_mask(lt.alert.category_t.all_categories)
         #self.session.set_alert_mask(lt.alert.category_t.storage_notification)
         self.end = False
-        self.additem = additem
+        self.additem = parent.additem
+
+        self.status = "stopped"
         """-----alert categories-----
         error_notification
         peer_notification
@@ -40,6 +45,7 @@ class TorrentSession(QtCore.QThread):
         rss_notification
         all_categories
         """
+
 
 
         self.setup_settings()
@@ -81,6 +87,54 @@ class TorrentSession(QtCore.QThread):
         #self.session.stop_upnp()
 
 
+    def setup_blocklist(self):
+        blockfile = "blocklist.p2p.gz"
+        self.statusbar.emit("%s - getting blocklist" % self.status)
+        url = "http://john.bitsurge.net/public/biglist.p2p.gz"
+        goodbefore = datetime.datetime.now() - datetime.timedelta(hours=5)
+        import urllib.request, gzip
+
+        if not os.path.exists(blockfile):
+            urllib.request.urlretrieve(url, blockfile)
+        if datetime.datetime.fromtimestamp(os.path.getctime(blockfile)) < goodbefore:
+            urllib.request.urlretrieve(url, blockfile)
+        else:
+            print("blocklist is still fresh..")
+
+        self.statusbar.emit("%s - setting blocklist" % self.status)
+        try:
+            f = gzip.open(blockfile)
+        except:
+            self.corrupt_list()
+            return
+        filter = lt.ip_filter()
+        exceptions = 0
+        for line in f.readlines():
+            if line.startswith(b'\n') or line.startswith(b'#'):
+                #we dont want empty lines or comments
+                pass
+            else:
+                fromto = line.split(b':')[-1].split(b'-')
+                try:
+                    filter.add_rule(fromto[0], fromto[1].split(b'\n')[0], 1)
+                except:
+                    print("exc: %s" % line.split(b':'))
+                    exceptions += 1
+                    if exceptions > 10:
+                        self.corrupt_list()
+                        break
+        self.session.set_ip_filter(filter)
+        self.statusbar.emit("%s" % self.status)
+        pass
+
+    def corrupt_list(self):
+        self.statusbar.emit("%s - !!! corrupt blocklist?" % self.status)
+        QtGui.QMessageBox.question(self, 'Corrupt Blocklist',
+                                   "Something is wrong with your blocklist.\n"
+                                   "Im deleting the File, restart me so i can download you a new one.",
+                                   QtGui.QMessageBox.Ok)
+        exit(0)
+
     def setup_db(self):
         dbfile = self.statdb
         if not os.path.exists(dbfile):
@@ -100,7 +154,11 @@ class TorrentSession(QtCore.QThread):
         self.end=True
 
     def run(self):
+        self.statusbar.emit(self.status)
+        self.setup_blocklist()
+
         self.session.listen_on(6881, 6891)
+        self.status = "running"
         """
         print("settings:")
         for attr, value in self.session.get_settings().items():
@@ -138,6 +196,7 @@ class TorrentSession(QtCore.QThread):
                         if h.get('handle') == handle:
                             self.handles.remove(h)
                             break
+            self.statusbar.emit("%s" % self.status)
             time.sleep(1)
 
         # ending - save stuff
