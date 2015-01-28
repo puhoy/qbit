@@ -14,13 +14,13 @@ class TestWidget(QtGui.QMainWindow, main_window):
         self.setupUi(self)
         self.torrents = []
 
-        #knöpfe verkabeln
+        #knoepfe verkabeln
         self.btn_addMagnetLink.clicked.connect(self.btn_addMagnetLink_clicked)
         self.btn_deleteTorrent.clicked.connect(self.btn_deleteTorrent_clicked)
         self.btn_addTorrentFile.clicked.connect(self.btn_addTorrentFile_clicked)
         #events
 
-        self.ts = TorrentSession()
+        self.ts = TorrentSession(self.additem)
         self.ts.start()
 
     @QtCore.pyqtSlot()
@@ -32,26 +32,28 @@ class TestWidget(QtGui.QMainWindow, main_window):
     @QtCore.pyqtSlot()
     def btn_addTorrentFile_clicked(self):
         path = QtGui.QFileDialog.getOpenFileName()
-        item = QtGui.QListWidgetItem()
+        if path is "":
+            return
         try:
-            lt.torrent_info(path)
-        except:
-            QtGui.QMessageBox.question(self, 'Message',
-                                           "Something happend while adding...\n"
-                                           "torrent already added? corrupt file?",
+            lt.torrent_info(lt.bdecode(open(path, 'rb').read(60000)))
+        except RuntimeError as e:
+            QtGui.QMessageBox.question(self, 'Runtime Error',
+                                           "%s" % e,
                                            QtGui.QMessageBox.Ok)
             return
-        self.lstWdgt_torrents.addItem(item)
-        self.addByTorrentFile(path, item)
+        except:
+            QtGui.QMessageBox.question(self, 'Error while adding',
+                                           "Something bad happend while trying to add...\n",
+                                           QtGui.QMessageBox.Ok)
+        self.addByTorrentFile(path)
 
     def addByMagnet(self, mlink):
         item = QtGui.QListWidgetItem()
         self.lstWdgt_torrents.addItem(item)
-        self.ts.add_magnetlink(mlink, item)
-        pass
+        self.ts.add_magnetlink(mlink)
 
-    def addByTorrentFile(self, fpath, item):
-        self.ts.add_torrent(fpath, item)
+    def addByTorrentFile(self, fpath):
+        self.ts.add_torrent(fpath)
 
     def btn_deleteTorrent_clicked(self):
         item = self.lstWdgt_torrents.selectedItems()[0]
@@ -60,12 +62,14 @@ class TestWidget(QtGui.QMainWindow, main_window):
                                            "really delete?",
                                            QtGui.QMessageBox.Yes,
                                            QtGui.QMessageBox.No)
-            if reply == QtGui.QMessageBox.No:
-                return
-            self.ts.delTorrent(item)
-            self.lstWdgt_torrents.takeItem(self.lstWdgt_torrents.row(item))
+            if reply == QtGui.QMessageBox.Yes:
+                self.ts.delTorrent(item)
+                self.lstWdgt_torrents.takeItem(self.lstWdgt_torrents.row(item))
 
-        pass
+    def additem(self):
+        item = QtGui.QListWidgetItem()
+        self.lstWdgt_torrents.addItem(item)
+        return item
 
 def main():
     app = QtGui.QApplication(sys.argv)
