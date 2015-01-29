@@ -6,7 +6,7 @@ from TorrentSession import TorrentSession
 import libtorrent as lt
 
 
-main_window = uic.loadUiType("test.ui")[0]                 # Load the UI
+main_window = uic.loadUiType("qbit_main.ui")[0]                 # Load the UI
 
 class TestWidget(QtGui.QMainWindow, main_window):
     def __init__(self, parent=None):

@@ -15,7 +15,7 @@ class TorrentSession(QtCore.QThread):
 
     def __init__(self, parent, savepath="./"):
         QtCore.QThread.__init__(self)
-        logging.basicConfig(filename='torrent.log', level=logging.DEBUG)
+        logging.basicConfig(filename='torrent.log', level=logging.INFO)
         self.statdb = 'stat.db'
         self.settingname = 'defaultsetting'
         self.session = lt.session()
@@ -99,7 +99,7 @@ class TorrentSession(QtCore.QThread):
         if datetime.datetime.fromtimestamp(os.path.getctime(blockfile)) < goodbefore:
             urllib.request.urlretrieve(url, blockfile)
         else:
-            print("blocklist is still fresh..")
+            logging.info("blocklist is still fresh..")
 
         self.statusbar.emit("%s - setting blocklist" % self.status)
         try:
