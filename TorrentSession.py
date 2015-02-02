@@ -8,27 +8,31 @@ import sqlite3
 import logging
 import datetime
 
-from PyQt4 import QtCore, QtGui
+from queue import Queue
+
+#from PyQt4 import QtCore, QtGui
+from PyQt4 import QtCore
 
 class TorrentSession(QtCore.QThread):
     statusbar = QtCore.pyqtSignal(str)
+    torrent_updated = QtCore.pyqtSignal(object, str)
+    torrent_deleted = QtCore.pyqtSignal(object)
 
-    def __init__(self, parent, savepath="./"):
+    def __init__(self, queue, savepath="./", loglevel=logging.INFO):
         QtCore.QThread.__init__(self)
-        logging.basicConfig(filename='torrent.log', level=logging.INFO)
+        #logging.basicConfig(filename='torrent.log', level=logging.INFO)
+        logging.basicConfig(level=loglevel)
         self.statdb = 'stat.db'
         self.settingname = 'defaultsetting'
         self.session = lt.session()
         self.savepath = savepath
         self.handles = []
+        self.kju = queue
         self.state_str = ['queued', 'checking', 'downloading metadata', \
               'downloading', 'finished', 'seeding', 'allocating', 'checking fastresume']
         self.session.set_alert_mask(lt.alert.category_t.all_categories)
         #self.session.set_alert_mask(lt.alert.category_t.storage_notification)
-        self.end = False
-        self.additem = parent.additem
 
-        self.status = "stopped"
         """-----alert categories-----
         error_notification
         peer_notification
@@ -46,7 +50,9 @@ class TorrentSession(QtCore.QThread):
         all_categories
         """
 
+        self.end = False
 
+        self.status = "stopped"
 
         self.setup_settings()
         self.setup_db()
@@ -129,10 +135,6 @@ class TorrentSession(QtCore.QThread):
 
     def corrupt_list(self):
         self.statusbar.emit("%s - !!! corrupt blocklist?" % self.status)
-        QtGui.QMessageBox.question(self, 'Corrupt Blocklist',
-                                   "Something is wrong with your blocklist.\n"
-                                   "Im deleting the File, restart me so i can download you a new one.",
-                                   QtGui.QMessageBox.Ok)
         exit(0)
 
     def setup_db(self):
@@ -153,6 +155,18 @@ class TorrentSession(QtCore.QThread):
     def safe_shutdown(self):
         self.end=True
 
+    def handle_queue(self):
+        while not self.kju.empty():
+            d = self.kju.get()
+            if d.get('addmagnet'):
+                self.add_magnetlink(d.get('addmagnet'))
+            elif d.get('addtorrent'):
+                self.add_torrent(d.get('addtorrent'))
+            elif d.get('deletetorrent'):
+                self.delTorrent(d.get('deletetorrent'))
+            elif d.get('shutdown'):
+                self.end = True
+
     def run(self):
         self.statusbar.emit(self.status)
         self.setup_blocklist()
@@ -167,44 +181,41 @@ class TorrentSession(QtCore.QThread):
 
         logging.info("lt läuft...")
         while not self.end:
+            # neue events abarbeiten
+            self.handle_queue()
+
+            #
+            self.statusbar.emit("%s" % self.status)
             for handle in self.handles:
-                stat = handle.get('handle').status()
-                logging.debug("%s - Progress: %s; Peers: %s; State: %s" % (handle.get('handle').name(), stat.progress * 100, stat.num_peers, self.state_str[stat.state]))
-                handle.get('item').setText("%s - "
-                                           "Progress: %.2f \n-- %s -- "
-                                           "total upload: %sMB "
-                                           "Peers: %s, U:%.2f D:%.2f_|" %
-                                           (handle.get('handle').name(),
-                                            stat.progress * 100, self.state_str[stat.state],
-                                            stat.total_upload/1024/1024,
-                                            stat.num_peers, stat.upload_rate, stat.download_rate))
+                stat = handle.status()
+                logging.debug("%s - Progress: %s; Peers: %s; State: %s" %
+                              (handle.name(), stat.progress * 100, stat.num_peers, self.state_str[stat.state]))
+                self.torrent_updated.emit(handle,
+                    "%s - "
+                    "Progress: %.2f \n-- %s -- "
+                    "total upload: %sMB "
+                    "Peers: %s, U:%.2f D:%.2f_|" %
+                    (handle.name(),
+                     stat.progress * 100, self.state_str[stat.state],
+                     stat.total_upload/1024/1024,
+                     stat.num_peers, stat.upload_rate, stat.download_rate))
+
             for alert in self.session.pop_alerts():
                 logging.debug("- %s %s" % (alert.what(), alert.message()))
-                if (alert.what() == "save_resume_data_alert"):
+                if (alert.what() == "save_resume_data_alert")\
+                        or (alert.what() == "save_resume_data_failed_alert"):
                     handle = alert.handle
-                    print("removing %s" % handle.name())
                     self.session.remove_torrent(handle)
-                    for h in self.handles:
-                        if h.get('handle') == handle:
-                            self.handles.remove(h)
-                            break
-                elif (alert.what() == "save_resume_data_failed_alert"):
-                    handle = alert.handle
-                    logging.info("removing %s" % handle.name())
-                    self.session.remove_torrent(handle)
-                    for h in self.handles:
-                        if h.get('handle') == handle:
-                            self.handles.remove(h)
-                            break
-            self.statusbar.emit("%s" % self.status)
+                    self.handles.pop(handle)
             time.sleep(1)
 
+        logging.debug("ending")
         # ending - save stuff
         # erase previous torrents first
         self.erase_all_torrents_from_db()
         # then trigger saving resume data
         for handle in self.handles:
-            handle.get('handle').save_resume_data(lt.save_resume_flags_t.flush_disk_cache)
+            handle.save_resume_data(lt.save_resume_flags_t.flush_disk_cache)
         # set alert mast to get the right alerts
         self.session.set_alert_mask(lt.alert.category_t.storage_notification)
         # wait for everything to save and finish!
@@ -217,18 +228,13 @@ class TorrentSession(QtCore.QThread):
                     logging.debug("removing %s" % handle.name())
                     self.session.remove_torrent(handle)
                     #print(self.session.wait_for_alert(1000))
-                    for h in self.handles:
-                        if h.get('handle') == handle:
-                            self.handles.remove(h)
-                            break
+                    self.handles.remove(handle)
                 elif (alert.what() == "save_resume_data_failed_alert"):
                     handle = alert.handle
                     logging.debug("removing %s" % handle.name())
                     self.session.remove_torrent(handle)
-                    for h in self.handles:
-                        if h.get('handle') == handle:
-                            self.handles.remove(h)
-                            break
+                    self.handles.remove(handle)
+
         self.save_state()
         time.sleep(1)
         logging.debug("handles at return: %s" % self.handles)
@@ -236,36 +242,32 @@ class TorrentSession(QtCore.QThread):
 
     def add_magnetlink(self, magnetlink):
         logging.info("adding mlink")
-        widgetitem = self.additem()
         handle = lt.add_magnet_uri(self.session, magnetlink, {'save_path': self.savepath})
-        self.handles.append({'handle': handle, 'item': widgetitem})
+        self.handles.append(handle)
+        #self.torrent_added.emit(handle)
 
     def add_torrent(self, torrentfilepath):
         logging.info("adding torrentfile")
-        widgetitem = self.additem()
         #info = lt.torrent_info(torrentfilepath)
-        info = lt.torrent_info(lt.bdecode(open(torrentfilepath, 'rb').read(60000)))
-        handle = self.session.add_torrent({'ti': info, 'save_path': self.savepath})
-        self.handles.append({'handle': handle, 'item': widgetitem})
+        info = lt.torrent_info(lt.bdecode(open(torrentfilepath, 'rb').read()))
+        self.add_torrent_by_info(info)
 
-    def restore(self, entry, resumedata=None):
-        widgetitem = self.additem()
-        torrentinfo = lt.torrent_info(entry)
+    def add_torrent_by_info(self, torrentinfo, resumedata=None):
         if not resumedata:
             handle = self.session.add_torrent({'ti': torrentinfo, 'save_path': self.savepath})
         else:
             handle = self.session.add_torrent({'ti': torrentinfo, 'resume_data': resumedata,
                                                'save_path': self.savepath})
-        self.handles.append({'handle': handle, 'item': widgetitem})
+        self.handles.append(handle)
+        #print("emitting 'added'...")
+        #self.torrent_added.emit(handle)
 
-    def delTorrent(self, widgetitem):
+    def delTorrent(self, handle):
         """saves the resume data for torrent
         when done, save_resume_data_alert will be thrown, then its safe to really delete the torrent
         """
-        for handle in self.handles:
-            if handle.get('item') == widgetitem:
-                handle.get('handle').save_resume_data(lt.save_resume_flags_t.flush_disk_cache) #creates save_resume_data_alert
-
+        handle.save_resume_data(lt.save_resume_flags_t.flush_disk_cache) #creates save_resume_data_alert
+        self.torrent_deleted.emit(handle)
 
     def save(self, handle, resume_data):
         torrent = lt.create_torrent(handle.get_torrent_info())
@@ -309,7 +311,8 @@ class TorrentSession(QtCore.QThread):
             logging.info("importing %s" % t[0])
             entry = lt.bdecode(t[1])
             fastresumedata = t[2]
-            self.restore(entry, fastresumedata)
+            torrentinfo = lt.torrent_info(entry)
+            self.add_torrent_by_info(torrentinfo, fastresumedata)
         db.close()
         pass
 

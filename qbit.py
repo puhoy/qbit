@@ -1,10 +1,11 @@
 __author__ = 'meatpuppet'
 import sys
-from PyQt4 import QtGui, uic, QtCore
-from AddTorrentWidget import AddTorrentWidget
+from PyQt4 import QtGui, uic, QtCore, Qt
+from addTorrentWidget import AddTorrentWidget
 from TorrentSession import TorrentSession
 import libtorrent as lt
 
+from queue import Queue
 
 main_window = uic.loadUiType("qbit_main.ui")[0]                 # Load the UI
 
@@ -12,21 +13,33 @@ class TestWidget(QtGui.QMainWindow, main_window):
     def __init__(self, parent=None):
         QtGui.QMainWindow.__init__(self, parent)
         self.setupUi(self)
-        self.torrents = []
+        self.items = {}
+
+        self.kju = Queue()
+
+        #self.lstWdgt_torrents.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        #self.lstWdgt_torrents.customContextMenuRequested.connect(self.handleContext)
 
         #knoepfe verkabeln
         self.btn_addMagnetLink.clicked.connect(self.btn_addMagnetLink_clicked)
         self.btn_deleteTorrent.clicked.connect(self.btn_deleteTorrent_clicked)
         self.btn_addTorrentFile.clicked.connect(self.btn_addTorrentFile_clicked)
 
-        self.ts = TorrentSession(self)
 
+        self.ts = TorrentSession(self.kju)
+
+        self.ts.statusbar.connect(self.statusBar.showMessage)
+        self.ts.torrent_updated.connect(self.updateitem)
+        self.ts.torrent_deleted.connect(self.deleteitem)
 
         self.ts.start()
 
-        self.ts.statusbar.connect(self.statusBar.showMessage)
-
-        #self.show_status("testing")
+    def handleContext(self, pos):
+        item = self.lstWdgt_torrents.itemAt(pos)
+        if item is not None:
+            menu = QtGui.QMenu("Context Menu", self)
+            menu.addAction("FOO")
+            ret = menu.exec_(self.lstWdgt_torrents.mapToGlobal(pos))
 
 
     @QtCore.pyqtSlot()
@@ -41,7 +54,7 @@ class TestWidget(QtGui.QMainWindow, main_window):
         if path is "":
             return
         try:
-            lt.torrent_info(lt.bdecode(open(path, 'rb').read(60000)))
+            lt.torrent_info(lt.bdecode(open(path, 'rb').read()))
         except RuntimeError as e:
             QtGui.QMessageBox.question(self, 'Runtime Error',
                                            "%s" % e,
@@ -54,28 +67,45 @@ class TestWidget(QtGui.QMainWindow, main_window):
         self.addByTorrentFile(path)
 
     def addByMagnet(self, mlink):
-        item = QtGui.QListWidgetItem()
-        self.lstWdgt_torrents.addItem(item)
-        self.ts.add_magnetlink(mlink)
+        self.kju.put({'addmagnet': mlink})
 
     def addByTorrentFile(self, fpath):
-        self.ts.add_torrent(fpath)
+        self.kju.put({'addtorrent': fpath})
 
     def btn_deleteTorrent_clicked(self):
-        item = self.lstWdgt_torrents.selectedItems()[0]
-        if item is not None:
+        items = self.lstWdgt_torrents.selectedItems()
+        if items is not None:
             reply = QtGui.QMessageBox.question(self, 'Message',
                                            "really delete?",
                                            QtGui.QMessageBox.Yes,
                                            QtGui.QMessageBox.No)
             if reply == QtGui.QMessageBox.Yes:
-                self.ts.delTorrent(item)
-                self.lstWdgt_torrents.takeItem(self.lstWdgt_torrents.row(item))
+                for item in items:
+                    for k in self.items.keys():  # k == handle
+                        if self.items[k] == item:
+                            self.kju.put({'deletetorrent': k})
+                #self.ts.delTorrent(item)
+                #self.lstWdgt_torrents.takeItem(self.lstWdgt_torrents.row(item))
 
-    def additem(self):
+
+    def makeitem(self, handle):
         item = QtGui.QListWidgetItem()
+        self.items[handle] = item
         self.lstWdgt_torrents.addItem(item)
-        return item
+
+    @QtCore.pyqtSlot(object, str)
+    def updateitem(self, handle, values):
+        if not self.items.get(handle):
+            self.makeitem(handle)
+        self.items.get(handle).setText(values)
+
+    @QtCore.pyqtSlot(object)
+    def deleteitem(self, handle):
+        item = self.items[handle]
+        self.lstWdgt_torrents.takeItem(self.lstWdgt_torrents.row(item))
+        self.items.pop(handle)
+
+
 
 def main():
     app = QtGui.QApplication(sys.argv)
@@ -83,7 +113,7 @@ def main():
     ex.show()
     ret = app.exec_()
     print("deleting Torrent Session..")
-    ex.ts.safe_shutdown()
+    ex.kju.put({'shutdown': True})
     ex.ts.wait()
     print("...aaaand deleted!")
     sys.exit(ret)
