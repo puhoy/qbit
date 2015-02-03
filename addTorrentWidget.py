@@ -1,9 +1,10 @@
 __author__ = 'meatpuppet'
 from PyQt4 import QtGui, uic, QtCore
+from gui import addmagnetlink
 
-addmagnetlink_window = uic.loadUiType("addmagnetlink.ui")[0]
+#addmagnetlink_window = uic.loadUiType("addmagnetlink.ui")[0]
 
-class AddTorrentWidget(QtGui.QDialog, addmagnetlink_window):
+class AddTorrentWidget(QtGui.QDialog, addmagnetlink.Ui_Dialog_add_torrent):
     mlink = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None):

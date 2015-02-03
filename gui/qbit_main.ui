@@ -22,11 +22,11 @@
       </property>
       <widget class="QWidget" name="tab_downloads">
        <attribute name="title">
-        <string>Downloads</string>
+        <string>Downloading</string>
        </attribute>
        <layout class="QHBoxLayout" name="horizontalLayout">
         <item>
-         <widget class="QListWidget" name="lstWdgt_torrents"/>
+         <widget class="QListWidget" name="lstWdgt_downloading"/>
         </item>
         <item>
          <layout class="QVBoxLayout" name="verticalLayout_2">
@@ -75,30 +75,25 @@
         </item>
        </layout>
       </widget>
-      <widget class="QWidget" name="tab_search">
+      <widget class="QWidget" name="tab_seeding">
        <attribute name="title">
-        <string>Suche</string>
+        <string>Seeding</string>
        </attribute>
-       <widget class="QTreeWidget" name="treeWidget">
-        <property name="geometry">
-         <rect>
-          <x>20</x>
-          <y>30</y>
-          <width>361</width>
-          <height>491</height>
-         </rect>
-        </property>
-        <column>
-         <property name="text">
-          <string notr="true">1</string>
-         </property>
-        </column>
-       </widget>
+       <layout class="QHBoxLayout" name="horizontalLayout_2">
+        <item>
+         <widget class="QListWidget" name="listWidget"/>
+        </item>
+       </layout>
       </widget>
       <widget class="QWidget" name="tab_shared">
        <attribute name="title">
         <string>Freigaben</string>
        </attribute>
+       <layout class="QHBoxLayout" name="horizontalLayout_3">
+        <item>
+         <widget class="QTableWidget" name="tableWidget"/>
+        </item>
+       </layout>
       </widget>
      </widget>
     </item>
@@ -110,12 +105,34 @@
     <string>toolBar</string>
    </property>
    <attribute name="toolBarArea">
-    <enum>TopToolBarArea</enum>
+    <enum>RightToolBarArea</enum>
    </attribute>
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
+   <addaction name="actionStart"/>
+   <addaction name="actionStop"/>
   </widget>
+  <action name="actionStart">
+   <property name="icon">
+    <iconset theme="gnome">
+     <normaloff>../../.designer/backup</normaloff>../../.designer/backup</iconset>
+   </property>
+   <property name="text">
+    <string>start</string>
+   </property>
+   <property name="toolTip">
+    <string>start</string>
+   </property>
+  </action>
+  <action name="actionStop">
+   <property name="text">
+    <string>stop</string>
+   </property>
+   <property name="toolTip">
+    <string>stop</string>
+   </property>
+  </action>
  </widget>
  <resources/>
  <connections/>

@@ -15,7 +15,7 @@ from PyQt4 import QtCore
 
 class TorrentSession(QtCore.QThread):
     statusbar = QtCore.pyqtSignal(str)
-    torrent_updated = QtCore.pyqtSignal(object, str)
+    torrent_updated = QtCore.pyqtSignal(object, object)  # handle, torrentinfo
     torrent_deleted = QtCore.pyqtSignal(object)
 
     def __init__(self, queue, savepath="./", loglevel=logging.INFO):
@@ -107,6 +107,7 @@ class TorrentSession(QtCore.QThread):
         else:
             logging.info("blocklist is still fresh..")
 
+
         self.statusbar.emit("%s - setting blocklist" % self.status)
         try:
             f = gzip.open(blockfile)
@@ -185,20 +186,13 @@ class TorrentSession(QtCore.QThread):
             self.handle_queue()
 
             #
-            self.statusbar.emit("%s" % self.status)
+            sessionstat = self.session.status()
+            self.statusbar.emit("%.2f up, %.2f down @ %s peers - %s" % (sessionstat.upload_rate/1024, sessionstat.download_rate/1024, sessionstat.num_peers, self.status))
             for handle in self.handles:
                 stat = handle.status()
                 logging.debug("%s - Progress: %s; Peers: %s; State: %s" %
                               (handle.name(), stat.progress * 100, stat.num_peers, self.state_str[stat.state]))
-                self.torrent_updated.emit(handle,
-                    "%s - "
-                    "Progress: %.2f \n-- %s -- "
-                    "total upload: %sMB "
-                    "Peers: %s, U:%.2f D:%.2f_|" %
-                    (handle.name(),
-                     stat.progress * 100, self.state_str[stat.state],
-                     stat.total_upload/1024/1024,
-                     stat.num_peers, stat.upload_rate, stat.download_rate))
+                self.torrent_updated.emit(handle, handle.status())
 
             for alert in self.session.pop_alerts():
                 logging.debug("- %s %s" % (alert.what(), alert.message()))

@@ -1,17 +1,22 @@
 __author__ = 'meatpuppet'
 import sys
-from PyQt4 import QtGui, uic, QtCore, Qt
+from PyQt4 import QtGui, uic, QtCore
 from addTorrentWidget import AddTorrentWidget
 from TorrentSession import TorrentSession
 import libtorrent as lt
 
 from queue import Queue
+import logging
 
-main_window = uic.loadUiType("qbit_main.ui")[0]                 # Load the UI
+from systray import SystemTrayIcon
+from gui import qbit_main
 
-class TestWidget(QtGui.QMainWindow, main_window):
+#main_window = uic.loadUiType("qbit_main.ui")[0]                 # Load the UI
+
+class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
     def __init__(self, parent=None):
-        QtGui.QMainWindow.__init__(self, parent)
+        super(Qbit_main, self).__init__(parent)
+        #QtGui.QMainWindow.__init__(self, parent)
         self.setupUi(self)
         self.items = {}
 
@@ -28,6 +33,8 @@ class TestWidget(QtGui.QMainWindow, main_window):
 
         self.ts = TorrentSession(self.kju)
 
+        self.state_str = self.ts.state_str
+
         self.ts.statusbar.connect(self.statusBar.showMessage)
         self.ts.torrent_updated.connect(self.updateitem)
         self.ts.torrent_deleted.connect(self.deleteitem)
@@ -35,11 +42,11 @@ class TestWidget(QtGui.QMainWindow, main_window):
         self.ts.start()
 
     def handleContext(self, pos):
-        item = self.lstWdgt_torrents.itemAt(pos)
+        item = self.lstWdgt_downloading.itemAt(pos)
         if item is not None:
             menu = QtGui.QMenu("Context Menu", self)
             menu.addAction("FOO")
-            ret = menu.exec_(self.lstWdgt_torrents.mapToGlobal(pos))
+            ret = menu.exec_(self.lstWdgt_downloading.mapToGlobal(pos))
 
 
     @QtCore.pyqtSlot()
@@ -73,7 +80,7 @@ class TestWidget(QtGui.QMainWindow, main_window):
         self.kju.put({'addtorrent': fpath})
 
     def btn_deleteTorrent_clicked(self):
-        items = self.lstWdgt_torrents.selectedItems()
+        items = self.lstWdgt_downloading.selectedItems()
         if items is not None:
             reply = QtGui.QMessageBox.question(self, 'Message',
                                            "really delete?",
@@ -85,36 +92,58 @@ class TestWidget(QtGui.QMainWindow, main_window):
                         if self.items[k] == item:
                             self.kju.put({'deletetorrent': k})
                 #self.ts.delTorrent(item)
-                #self.lstWdgt_torrents.takeItem(self.lstWdgt_torrents.row(item))
+                #self.lstWdgt_downloading.takeItem(self.lstWdgt_downloading.row(item))
 
 
     def makeitem(self, handle):
         item = QtGui.QListWidgetItem()
-        self.items[handle] = item
-        self.lstWdgt_torrents.addItem(item)
+        item.setSizeHint(QtCore.QSize(item.sizeHint().width(), 30))
 
-    @QtCore.pyqtSlot(object, str)
-    def updateitem(self, handle, values):
+        bar = QtGui.QProgressBar()
+        bar.setVisible(True)
+        #bar.setMinimumHeight(30)
+
+        #list = QtGui.QListWidget
+        self.lstWdgt_downloading.addItem(item)
+        self.lstWdgt_downloading.setItemWidget(item, bar)
+        self.items[handle] = (item, bar)
+
+    @QtCore.pyqtSlot(object, object)
+    def updateitem(self, handle, status):
         if not self.items.get(handle):
             self.makeitem(handle)
-        self.items.get(handle).setText(values)
+        stat = status
+        values =  "%s - " \
+        "Progress: %.2f \n-- %s -- " \
+        "total upload: %.2fMb " \
+        "Peers: %s, U:%.2f D:%.2f_|" % \
+        (handle.name(),
+         stat.progress * 100, self.state_str[stat.state],
+         stat.total_upload/1024/1024,
+         stat.num_peers, stat.upload_rate/1024, stat.download_rate/1024)
+        self.items.get(handle)[1].setValue(stat.progress * 100)
+        self.items.get(handle)[1].setFormat(values)
+
+
 
     @QtCore.pyqtSlot(object)
     def deleteitem(self, handle):
-        item = self.items[handle]
-        self.lstWdgt_torrents.takeItem(self.lstWdgt_torrents.row(item))
+        (item, row) = self.items[handle]
+        self.lstWdgt_downloading.takeItem(self.lstWdgt_downloading.row(item))
         self.items.pop(handle)
-
-
 
 def main():
     app = QtGui.QApplication(sys.argv)
-    ex = TestWidget()
-    ex.show()
+    main = Qbit_main()
+    main.show()
+    style = app.style()
+    icon = QtGui.QIcon(style.standardPixmap(QtGui.QStyle.SP_ArrowDown))
+    trayIcon = SystemTrayIcon(icon)
+    trayIcon.show()
     ret = app.exec_()
     print("deleting Torrent Session..")
-    ex.kju.put({'shutdown': True})
-    ex.ts.wait()
+    main.kju.put({'shutdown': True})
+    main.ts.wait()
     print("...aaaand deleted!")
     sys.exit(ret)
 
