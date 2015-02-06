@@ -20,7 +20,6 @@ class TorrentSession(QtCore.QThread):
 
     def __init__(self, queue, savepath="./", loglevel=logging.INFO):
         QtCore.QThread.__init__(self)
-        #logging.basicConfig(filename='torrent.log', level=logging.INFO)
         logging.basicConfig(level=loglevel)
         self.statdb = 'stat.db'
         self.settingname = 'defaultsetting'
@@ -185,7 +184,6 @@ class TorrentSession(QtCore.QThread):
             # neue events abarbeiten
             self.handle_queue()
 
-            #
             sessionstat = self.session.status()
             self.statusbar.emit("%.2f up, %.2f down @ %s peers - %s" % (sessionstat.upload_rate/1024, sessionstat.download_rate/1024, sessionstat.num_peers, self.status))
             for handle in self.handles:
