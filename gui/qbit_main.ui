@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>613</width>
-    <height>254</height>
+    <width>546</width>
+    <height>488</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -26,52 +26,16 @@
        </attribute>
        <layout class="QHBoxLayout" name="horizontalLayout">
         <item>
-         <widget class="QListWidget" name="lstWdgt_downloading"/>
-        </item>
-        <item>
-         <layout class="QVBoxLayout" name="verticalLayout_2">
-          <item>
-           <widget class="QPushButton" name="btn_addMagnetLink">
-            <property name="text">
-             <string>Add MagnetLink</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="btn_addTorrentFile">
-            <property name="text">
-             <string>Add Torrent File</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="btn_deleteTorrent">
-            <property name="text">
-             <string>Delete</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <spacer name="verticalSpacer">
-            <property name="orientation">
-             <enum>Qt::Vertical</enum>
-            </property>
-            <property name="sizeHint" stdset="0">
-             <size>
-              <width>20</width>
-              <height>40</height>
-             </size>
-            </property>
-           </spacer>
-          </item>
-          <item>
-           <widget class="QPushButton" name="btn_create_torrent">
-            <property name="text">
-             <string>Seed File</string>
-            </property>
-           </widget>
-          </item>
-         </layout>
+         <widget class="QTreeWidget" name="treeWidget_downloading">
+          <attribute name="headerVisible">
+           <bool>false</bool>
+          </attribute>
+          <column>
+           <property name="text">
+            <string notr="true">1</string>
+           </property>
+          </column>
+         </widget>
         </item>
        </layout>
       </widget>
@@ -85,16 +49,6 @@
         </item>
        </layout>
       </widget>
-      <widget class="QWidget" name="tab_shared">
-       <attribute name="title">
-        <string>Freigaben</string>
-       </attribute>
-       <layout class="QHBoxLayout" name="horizontalLayout_3">
-        <item>
-         <widget class="QTableWidget" name="tableWidget"/>
-        </item>
-       </layout>
-      </widget>
      </widget>
     </item>
    </layout>
@@ -105,32 +59,32 @@
     <string>toolBar</string>
    </property>
    <attribute name="toolBarArea">
-    <enum>RightToolBarArea</enum>
+    <enum>LeftToolBarArea</enum>
    </attribute>
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="actionStart"/>
-   <addaction name="actionStop"/>
+   <addaction name="actionPause"/>
+   <addaction name="actionAdd"/>
   </widget>
-  <action name="actionStart">
+  <action name="actionAdd">
    <property name="icon">
-    <iconset theme="gnome">
-     <normaloff>../../.designer/backup</normaloff>../../.designer/backup</iconset>
+    <iconset>
+     <normaloff>../../../.designer/backup</normaloff>../../../.designer/backup</iconset>
    </property>
    <property name="text">
-    <string>start</string>
+    <string>add</string>
    </property>
    <property name="toolTip">
-    <string>start</string>
+    <string>add a Torrent</string>
    </property>
   </action>
-  <action name="actionStop">
+  <action name="actionPause">
    <property name="text">
-    <string>stop</string>
+    <string>pause</string>
    </property>
    <property name="toolTip">
-    <string>stop</string>
+    <string>pause seeding and leeching</string>
    </property>
   </action>
  </widget>

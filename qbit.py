@@ -11,24 +11,33 @@ import logging
 from systray import SystemTrayIcon
 from gui import qbit_main
 
+import functools
+
 #main_window = uic.loadUiType("qbit_main.ui")[0]                 # Load the UI
 
 class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
+    deletetorrent = QtCore.pyqtSignal(object)
     def __init__(self, parent=None):
         super(Qbit_main, self).__init__(parent)
         #QtGui.QMainWindow.__init__(self, parent)
         self.setupUi(self)
         self.items = {}
 
+        self.mapper = QtCore.QSignalMapper(self)
+
         self.kju = Queue()
 
-        #self.lstWdgt_torrents.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        #self.lstWdgt_torrents.customContextMenuRequested.connect(self.handleContext)
+        addMenu = QtGui.QMenu()
+        addFile = QtGui.QAction('Torrentfile', self)
+        addFile.triggered.connect(self.btn_addTorrentFile_clicked)
+        addMenu.addAction(addFile)
+        addLink = QtGui.QAction('Magnetlink', self)
+        addLink.triggered.connect(self.btn_addMagnetLink_clicked)
+        addMenu.addAction(addLink)
 
-        #knoepfe verkabeln
-        self.btn_addMagnetLink.clicked.connect(self.btn_addMagnetLink_clicked)
-        self.btn_deleteTorrent.clicked.connect(self.btn_deleteTorrent_clicked)
-        self.btn_addTorrentFile.clicked.connect(self.btn_addTorrentFile_clicked)
+        self.actionAdd.setMenu(addMenu)
+
+        self.actionPause.triggered.connect(self.pauseSession)
 
 
         self.ts = TorrentSession(self.kju)
@@ -38,15 +47,16 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
         self.ts.statusbar.connect(self.statusBar.showMessage)
         self.ts.torrent_updated.connect(self.updateitem)
         self.ts.torrent_deleted.connect(self.deleteitem)
+        self.ts.torrent_added.connect(self.makeitem)
 
         self.ts.start()
 
     def handleContext(self, pos):
-        item = self.lstWdgt_downloading.itemAt(pos)
+        item = self.treeWidget_downloading.itemAt(pos)
         if item is not None:
             menu = QtGui.QMenu("Context Menu", self)
             menu.addAction("FOO")
-            ret = menu.exec_(self.lstWdgt_downloading.mapToGlobal(pos))
+            ret = menu.exec_(self.treeWidget_downloading.mapToGlobal(pos))
 
 
     @QtCore.pyqtSlot()
@@ -79,39 +89,52 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
     def addByTorrentFile(self, fpath):
         self.kju.put({'addtorrent': fpath})
 
-    def btn_deleteTorrent_clicked(self):
-        items = self.lstWdgt_downloading.selectedItems()
-        if items is not None:
-            reply = QtGui.QMessageBox.question(self, 'Message',
-                                           "really delete?",
-                                           QtGui.QMessageBox.Yes,
-                                           QtGui.QMessageBox.No)
-            if reply == QtGui.QMessageBox.Yes:
-                for item in items:
-                    for k in self.items.keys():  # k == handle
-                        if self.items[k] == item:
-                            self.kju.put({'deletetorrent': k})
-                #self.ts.delTorrent(item)
-                #self.lstWdgt_downloading.takeItem(self.lstWdgt_downloading.row(item))
+    @QtCore.pyqtSlot()
+    def pauseSession(self):
+        self.kju.put({'pause': True})
+
+    @QtCore.pyqtSlot(object)
+    def deleteTorrent(self, handle):
+        print(handle)
+        reply = QtGui.QMessageBox.question(self, 'Message',
+                                       "really delete?",
+                                       QtGui.QMessageBox.Yes,
+                                       QtGui.QMessageBox.No)
+        if reply == QtGui.QMessageBox.Yes:
+            self.kju.put({'deletetorrent': handle})
 
 
+    @QtCore.pyqtSlot(object)
     def makeitem(self, handle):
-        item = QtGui.QListWidgetItem()
-        item.setSizeHint(QtCore.QSize(item.sizeHint().width(), 30))
+        print('making item!')
+        item = QtGui.QTreeWidgetItem()
+
+        item.setSizeHint(0, QtCore.QSize(0, 30))
 
         bar = QtGui.QProgressBar()
         bar.setVisible(True)
-        #bar.setMinimumHeight(30)
+        bar.setContextMenuPolicy(QtCore.Qt.ActionsContextMenu)
+        info = QtGui.QAction('detailed info', self)
+        info.triggered.connect(functools.partial(self.deleteTorrent, handle))
+        delete = QtGui.QAction('delete', self)
+        delete.triggered.connect(functools.partial(self.deleteTorrent, handle))
 
-        #list = QtGui.QListWidget
-        self.lstWdgt_downloading.addItem(item)
-        self.lstWdgt_downloading.setItemWidget(item, bar)
+        bar.addAction(info)
+        bar.addAction(delete)
+
+        self.treeWidget_downloading.addTopLevelItem(item)
+        filestore = handle.get_torrent_info().files()
+        fileitems = []
+        for file in filestore:
+            print(file.path)
+            fileitems.append(QtGui.QTreeWidgetItem([file.path]))
+        item.addChildren(fileitems)
+
+        self.treeWidget_downloading.setItemWidget(item, 0, bar)
         self.items[handle] = (item, bar)
 
     @QtCore.pyqtSlot(object, object)
     def updateitem(self, handle, status):
-        if not self.items.get(handle):
-            self.makeitem(handle)
         stat = status
         values =  "%s - " \
         "Progress: %.2f \n-- %s -- " \
@@ -128,8 +151,13 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
 
     @QtCore.pyqtSlot(object)
     def deleteitem(self, handle):
-        (item, row) = self.items[handle]
-        self.lstWdgt_downloading.takeItem(self.lstWdgt_downloading.row(item))
+        print('deleting item for')
+        print(handle)
+        (item, bar) = self.items[handle]
+        self.treeWidget_downloading.removeItemWidget(item, 0)
+
+        self.treeWidget_downloading.takeTopLevelItem(self.treeWidget_downloading.indexOfTopLevelItem(item))
+
         self.items.pop(handle)
 
 def main():

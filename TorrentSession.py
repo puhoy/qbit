@@ -17,6 +17,7 @@ class TorrentSession(QtCore.QThread):
     statusbar = QtCore.pyqtSignal(str)
     torrent_updated = QtCore.pyqtSignal(object, object)  # handle, torrentinfo
     torrent_deleted = QtCore.pyqtSignal(object)
+    torrent_added = QtCore.pyqtSignal(object)
 
     def __init__(self, queue, savepath="./", loglevel=logging.INFO):
         QtCore.QThread.__init__(self)
@@ -55,7 +56,7 @@ class TorrentSession(QtCore.QThread):
 
         self.setup_settings()
         self.setup_db()
-        self.resume()
+
 
     def setup_settings(self):
         #settings
@@ -91,14 +92,14 @@ class TorrentSession(QtCore.QThread):
         #self.session.stop_natpmp()
         #self.session.stop_upnp()
 
+    def checkblocklist(self, path, url=None):
+        blockfile = path
 
-    def setup_blocklist(self):
-        blockfile = "blocklist.p2p.gz"
         self.statusbar.emit("%s - getting blocklist" % self.status)
         url = "http://john.bitsurge.net/public/biglist.p2p.gz"
         goodbefore = datetime.datetime.now() - datetime.timedelta(hours=5)
-        import urllib.request, gzip
 
+        import urllib.request
         if not os.path.exists(blockfile):
             urllib.request.urlretrieve(url, blockfile)
         if datetime.datetime.fromtimestamp(os.path.getctime(blockfile)) < goodbefore:
@@ -106,6 +107,12 @@ class TorrentSession(QtCore.QThread):
         else:
             logging.info("blocklist is still fresh..")
 
+
+    def setup_blocklist(self):
+        blockfile = "blocklist.p2p.gz"
+
+        import gzip
+        self.checkblocklist(blockfile)
 
         self.statusbar.emit("%s - setting blocklist" % self.status)
         try:
@@ -166,10 +173,24 @@ class TorrentSession(QtCore.QThread):
                 self.delTorrent(d.get('deletetorrent'))
             elif d.get('shutdown'):
                 self.end = True
+            elif d.get('pause'):
+                if self.session.is_paused():
+                    self.pause(False)
+                else:
+                    self.pause(True)
+
+    def pause(self, what):
+        if what:
+            self.session.pause()
+            self.status = 'paused'
+        else:
+            self.session.resume()
+            self.status = 'running'
 
     def run(self):
         self.statusbar.emit(self.status)
         self.setup_blocklist()
+        self.resume()
 
         self.session.listen_on(6881, 6891)
         self.status = "running"
@@ -197,8 +218,9 @@ class TorrentSession(QtCore.QThread):
                 if (alert.what() == "save_resume_data_alert")\
                         or (alert.what() == "save_resume_data_failed_alert"):
                     handle = alert.handle
+
                     self.session.remove_torrent(handle)
-                    self.handles.pop(handle)
+                    self.handles.remove(handle)
             time.sleep(1)
 
         logging.debug("ending")
@@ -236,7 +258,7 @@ class TorrentSession(QtCore.QThread):
         logging.info("adding mlink")
         handle = lt.add_magnet_uri(self.session, magnetlink, {'save_path': self.savepath})
         self.handles.append(handle)
-        #self.torrent_added.emit(handle)
+        self.torrent_added.emit(handle)
 
     def add_torrent(self, torrentfilepath):
         logging.info("adding torrentfile")
@@ -250,9 +272,11 @@ class TorrentSession(QtCore.QThread):
         else:
             handle = self.session.add_torrent({'ti': torrentinfo, 'resume_data': resumedata,
                                                'save_path': self.savepath})
+
+        handle
         self.handles.append(handle)
-        #print("emitting 'added'...")
-        #self.torrent_added.emit(handle)
+        print("emitting 'added'...")
+        self.torrent_added.emit(handle)
 
     def delTorrent(self, handle):
         """saves the resume data for torrent
@@ -260,6 +284,7 @@ class TorrentSession(QtCore.QThread):
         """
         handle.save_resume_data(lt.save_resume_flags_t.flush_disk_cache) #creates save_resume_data_alert
         self.torrent_deleted.emit(handle)
+
 
     def save(self, handle, resume_data):
         torrent = lt.create_torrent(handle.get_torrent_info())
