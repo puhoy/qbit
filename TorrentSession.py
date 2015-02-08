@@ -173,6 +173,18 @@ class TorrentSession(QtCore.QThread):
                 self.delTorrent(d.get('deletetorrent'))
             elif d.get('shutdown'):
                 self.end = True
+            elif d.get('pauseTorrent'):
+                handle = d.get('pauseTorrent')
+                status = handle.status()
+                logging.info(status.paused)
+                if not status.paused:
+                    logging.debug('pausing')
+                    handle.auto_managed(False)
+                    handle.pause()
+                else:
+                    logging.debug('resume')
+                    handle.auto_managed(True)
+                    handle.resume()
             elif d.get('pause'):
                 if self.session.is_paused():
                     self.pause(False)

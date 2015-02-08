@@ -1,6 +1,6 @@
 __author__ = 'meatpuppet'
 import sys
-from PyQt4 import QtGui, uic, QtCore
+from PyQt4 import QtGui, uic, QtCore, Qt
 from addTorrentWidget import AddTorrentWidget
 from TorrentSession import TorrentSession
 import libtorrent as lt
@@ -90,6 +90,11 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
         self.kju.put({'addtorrent': fpath})
 
     @QtCore.pyqtSlot()
+    def pauseTorrent(self, handle):
+
+        self.kju.put({'pauseTorrent': handle})
+
+    @QtCore.pyqtSlot()
     def pauseSession(self):
         self.kju.put({'pause': True})
 
@@ -109,51 +114,84 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
         print('making item!')
         item = QtGui.QTreeWidgetItem()
 
-        item.setSizeHint(0, QtCore.QSize(0, 30))
+        item.setSizeHint(0, QtCore.QSize(400, 30))
+        item.setSizeHint(1, QtCore.QSize(80, 30))
 
+
+
+        self.treeWidget_downloading.resizeColumnToContents(0)
         bar = QtGui.QProgressBar()
         bar.setVisible(True)
         bar.setContextMenuPolicy(QtCore.Qt.ActionsContextMenu)
         info = QtGui.QAction('detailed info', self)
-        info.triggered.connect(functools.partial(self.deleteTorrent, handle))
+        #info.triggered.connect(functools.partial(self.deleteTorrent, handle))
+        pause = QtGui.QAction('(un)pause', self)
+        pause.triggered.connect(functools.partial(self.pauseTorrent, handle))
         delete = QtGui.QAction('delete', self)
         delete.triggered.connect(functools.partial(self.deleteTorrent, handle))
 
         bar.addAction(info)
+        bar.addAction(pause)
         bar.addAction(delete)
 
         self.treeWidget_downloading.addTopLevelItem(item)
-        filestore = handle.get_torrent_info().files()
-        fileitems = []
-        for file in filestore:
-            print(file.path)
-            fileitems.append(QtGui.QTreeWidgetItem([file.path]))
-        item.addChildren(fileitems)
-
         self.treeWidget_downloading.setItemWidget(item, 0, bar)
-        self.items[handle] = (item, bar)
+        self.items[handle] = {'item': item,
+                              'bar': bar,
+                              'files': {}}
+
+
+
+
 
     @QtCore.pyqtSlot(object, object)
     def updateitem(self, handle, status):
         stat = status
+        state_str = self.state_str[stat.state]
+        if status.paused:
+            state_str = state_str + ' (paused)'
         values =  "%s - " \
         "Progress: %.2f \n-- %s -- " \
         "total upload: %.2fMb " \
         "Peers: %s, U:%.2f D:%.2f_|" % \
         (handle.name(),
-         stat.progress * 100, self.state_str[stat.state],
+         stat.progress * 100, state_str,
          stat.total_upload/1024/1024,
          stat.num_peers, stat.upload_rate/1024, stat.download_rate/1024)
-        self.items.get(handle)[1].setValue(stat.progress * 100)
-        self.items.get(handle)[1].setFormat(values)
+        self.items.get(handle).get('bar').setValue(stat.progress * 100)
+        self.items.get(handle).get('bar').setFormat(values)
+        if handle.get_torrent_info() and not self.items[handle].get('files'):
+            self.set_filelist(handle)
+
+    def set_filelist(self, handle):
+        filestore = handle.get_torrent_info().files()
+        fileitems = []
+        files = {}
+        index = 0
+        for file in filestore:
+            fitem = QtGui.QTreeWidgetItem(["%s" % file.path])
+            fitem.setText(1, "%.2fMb" % (file.size/1024/1024))
+            fitem.setCheckState(0, QtCore.Qt.Checked)  # setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
+            fileitems.append(fitem)
+            files[index] = {'widget': fitem}
+            index += 1
+        item = self.items.get(handle).get('item')
+        item.setText(1, "%.2fMb" % (handle.get_torrent_info().total_size()/1024/1024))
+        item.addChildren(fileitems)
+        self.items[handle]['files'] = files
 
 
+    def exclude_file(self, handle, index, bool=True):
+        # handle:
+        # void file_priority (int index, int priority) const;
+        pass
 
     @QtCore.pyqtSlot(object)
     def deleteitem(self, handle):
         print('deleting item for')
         print(handle)
-        (item, bar) = self.items[handle]
+        item = self.items[handle].get('item')
+        bar = self.items[handle].get('bar')
         self.treeWidget_downloading.removeItemWidget(item, 0)
 
         self.treeWidget_downloading.takeTopLevelItem(self.treeWidget_downloading.indexOfTopLevelItem(item))

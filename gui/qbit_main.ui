@@ -28,11 +28,19 @@
         <item>
          <widget class="QTreeWidget" name="treeWidget_downloading">
           <attribute name="headerVisible">
-           <bool>false</bool>
+           <bool>true</bool>
+          </attribute>
+          <attribute name="headerCascadingSectionResizes">
+           <bool>true</bool>
           </attribute>
           <column>
            <property name="text">
-            <string notr="true">1</string>
+            <string notr="true">torrent</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>size</string>
            </property>
           </column>
          </widget>
@@ -70,7 +78,7 @@
   <action name="actionAdd">
    <property name="icon">
     <iconset>
-     <normaloff>../../../.designer/backup</normaloff>../../../.designer/backup</iconset>
+     <normaloff>../../../../.designer/backup</normaloff>../../../../.designer/backup</iconset>
    </property>
    <property name="text">
     <string>add</string>
