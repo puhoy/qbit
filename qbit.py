@@ -142,24 +142,25 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
 
 
 
-
-
     @QtCore.pyqtSlot(object, object)
     def updateitem(self, handle, status):
         stat = status
         state_str = self.state_str[stat.state]
         if status.paused:
             state_str = state_str + ' (paused)'
-        values =  "%s - " \
-        "Progress: %.2f \n-- %s -- " \
-        "total upload: %.2fMb " \
-        "Peers: %s, U:%.2f D:%.2f_|" % \
-        (handle.name(),
-         stat.progress * 100, state_str,
-         stat.total_upload/1024/1024,
-         stat.num_peers, stat.upload_rate/1024, stat.download_rate/1024)
-        self.items.get(handle).get('bar').setValue(stat.progress * 100)
-        self.items.get(handle).get('bar').setFormat(values)
+        try:
+            values =  "%s - " \
+            "Progress: %.2f \n-- %s -- " \
+            "total upload: %.2fMb " \
+            "Peers: %s, U:%.2f D:%.2f_|" % \
+            (handle.name(),
+             stat.progress * 100, state_str,
+             stat.total_upload/1024/1024,
+             stat.num_peers, stat.upload_rate/1024, stat.download_rate/1024)
+            self.items.get(handle).get('bar').setValue(stat.progress * 100)
+            self.items.get(handle).get('bar').setFormat(values)
+        except:
+            pass
         if handle.get_torrent_info() and not self.items[handle].get('files'):
             self.set_filelist(handle)
 
@@ -168,22 +169,46 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
         fileitems = []
         files = {}
         index = 0
+        prios = handle.file_priorities()
         for file in filestore:
             fitem = QtGui.QTreeWidgetItem(["%s" % file.path])
             fitem.setText(1, "%.2fMb" % (file.size/1024/1024))
-            fitem.setCheckState(0, QtCore.Qt.Checked)  # setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
+            if prios[index] == 1:
+                fitem.setCheckState(0, QtCore.Qt.Checked)  # setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
+            else:
+                fitem.setCheckState(0, QtCore.Qt.Unchecked)
             fileitems.append(fitem)
             files[index] = {'widget': fitem}
+
             index += 1
         item = self.items.get(handle).get('item')
         item.setText(1, "%.2fMb" % (handle.get_torrent_info().total_size()/1024/1024))
         item.addChildren(fileitems)
+        self.treeWidget_downloading.itemChanged.connect(self.handleItemChanged)
         self.items[handle]['files'] = files
 
+    def handleItemChanged(self, item, column):
+        parent = item.parent()
+        for k, vdict in self.items.items():
+            if vdict['item'] is parent:
+                handle = k
+                index = parent.indexOfChild(item)
+                if item.flags() & QtCore.Qt.ItemIsUserCheckable:
+                    if item.checkState(0) == QtCore.Qt.Checked:
+                        print('%s: Checked' % parent.indexOfChild(item))
+                        self.set_prio(handle, index, 1)
+                    else:
+                        print('%s: UnChecked' % parent.indexOfChild(item))
+                        self.set_prio(handle, index, 0)
 
-    def exclude_file(self, handle, index, bool=True):
+    def set_prio(self, handle, fileindex, prio=0):  # see http://www.rasterbar.com/products/libtorrent/manual.html#torrent-handle -> piece prio
         # handle:
         # void file_priority (int index, int priority) const;
+        #handle.file_priority(fileindex, prio)
+        logging.info('setting prio')
+        self.kju.put({'setprio': {'index': fileindex,
+                                  'prio': prio,
+                                  'handle': handle}})
         pass
 
     @QtCore.pyqtSlot(object)

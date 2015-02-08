@@ -190,6 +190,13 @@ class TorrentSession(QtCore.QThread):
                     self.pause(False)
                 else:
                     self.pause(True)
+            elif d.get('setprio'):
+                # self.kju.put({'setprio': {'index': fileindex,'prio': prio,'handle': handle}})
+                index = d.get('setprio').get('index')
+                prio = d.get('setprio').get('prio')
+                handle = d.get('setprio').get('handle')
+                handle.file_priority(index, prio)
+                logging.info('new file priorities: %s ' % handle.file_priorities())
 
     def pause(self, what):
         if what:
