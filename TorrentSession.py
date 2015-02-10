@@ -19,13 +19,12 @@ class TorrentSession(QtCore.QThread):
     torrent_deleted = QtCore.pyqtSignal(object)
     torrent_added = QtCore.pyqtSignal(object)
 
-    def __init__(self, queue, savepath="./", loglevel=logging.INFO):
+    def __init__(self, queue, loglevel=logging.INFO):
         QtCore.QThread.__init__(self)
         logging.basicConfig(level=loglevel)
         self.statdb = 'stat.db'
         self.settingname = 'defaultsetting'
         self.session = lt.session()
-        self.savepath = savepath
         self.handles = []
         self.kju = queue
         self.state_str = ['queued', 'checking', 'downloading metadata', \
@@ -149,7 +148,7 @@ class TorrentSession(QtCore.QThread):
         if not os.path.exists(dbfile):
             conn = sqlite3.connect(dbfile)
             c = conn.cursor()
-            c.execute("CREATE TABLE torrents (magnetlink varchar PRIMARY KEY, torrent blob, status blob)")
+            c.execute("CREATE TABLE torrents (magnetlink varchar PRIMARY KEY, torrent blob, status blob, save_path varchar)")
             c.execute("CREATE TABLE sessionstatus (settingname varchar PRIMARY KEY, status blob)")
             conn.commit()
             conn.close()
@@ -166,9 +165,9 @@ class TorrentSession(QtCore.QThread):
         while not self.kju.empty():
             d = self.kju.get()
             if d.get('addmagnet'):
-                self.add_magnetlink(d.get('addmagnet'))
+                self.add_magnetlink(d.get('addmagnet'), d.get('storepath'))
             elif d.get('addtorrent'):
-                self.add_torrent(d.get('addtorrent'))
+                self.add_torrent(d.get('addtorrent'), d.get('storepath'))
             elif d.get('deletetorrent'):
                 self.delTorrent(d.get('deletetorrent'))
             elif d.get('shutdown'):
@@ -233,11 +232,14 @@ class TorrentSession(QtCore.QThread):
                 self.torrent_updated.emit(handle, handle.status())
 
             for alert in self.session.pop_alerts():
-                logging.debug("- %s %s" % (alert.what(), alert.message()))
+                #print("%s" % (alert.what()))
+
+                #print("%s" % alert.message())
                 if (alert.what() == "save_resume_data_alert")\
                         or (alert.what() == "save_resume_data_failed_alert"):
                     handle = alert.handle
-
+                elif alert.what() == "file_error_alert":
+                    logging.info("%s" %alert.error)
                     self.session.remove_torrent(handle)
                     self.handles.remove(handle)
             time.sleep(1)
@@ -273,28 +275,27 @@ class TorrentSession(QtCore.QThread):
         logging.debug("handles at return: %s" % self.handles)
         return
 
-    def add_magnetlink(self, magnetlink):
+    def add_magnetlink(self, magnetlink, save_path):
         logging.info("adding mlink")
-        handle = lt.add_magnet_uri(self.session, magnetlink, {'save_path': self.savepath})
+        handle = lt.add_magnet_uri(self.session, magnetlink, {'save_path': save_path})
         self.handles.append(handle)
         self.torrent_added.emit(handle)
 
-    def add_torrent(self, torrentfilepath):
+    def add_torrent(self, torrentfilepath, save_path):
         logging.info("adding torrentfile")
         #info = lt.torrent_info(torrentfilepath)
         info = lt.torrent_info(lt.bdecode(open(torrentfilepath, 'rb').read()))
-        self.add_torrent_by_info(info)
+        self.add_torrent_by_info(info, save_path)
 
-    def add_torrent_by_info(self, torrentinfo, resumedata=None):
+    def add_torrent_by_info(self, torrentinfo, save_path, resumedata=None):
         if not resumedata:
-            handle = self.session.add_torrent({'ti': torrentinfo, 'save_path': self.savepath})
+            logging.debug("no resume data!")
+            handle = self.session.add_torrent({'ti': torrentinfo, 'save_path': save_path})
         else:
-            handle = self.session.add_torrent({'ti': torrentinfo, 'resume_data': resumedata,
-                                               'save_path': self.savepath})
+            logging.debug('resuming')
+            handle = self.session.add_torrent({'ti': torrentinfo, 'save_path': save_path, 'resume_data': resumedata})
 
-        handle
         self.handles.append(handle)
-        print("emitting 'added'...")
         self.torrent_added.emit(handle)
 
     def delTorrent(self, handle):
@@ -304,8 +305,8 @@ class TorrentSession(QtCore.QThread):
         handle.save_resume_data(lt.save_resume_flags_t.flush_disk_cache) #creates save_resume_data_alert
         self.torrent_deleted.emit(handle)
 
-
     def save(self, handle, resume_data):
+        save_path = handle.save_path()
         torrent = lt.create_torrent(handle.get_torrent_info())
         torfile = lt.bencode(torrent.generate())
         magnet = lt.make_magnet_uri(handle.get_torrent_info())
@@ -314,7 +315,7 @@ class TorrentSession(QtCore.QThread):
         db = sqlite3.connect(self.statdb)
         # create table torrents (magnetlink varchar(256), torrent blob, status blob);
         c = db.cursor()
-        c.execute("INSERT or REPLACE INTO torrents VALUES (?, ?, ?)", (magnet, sqlite3.Binary(torfile), sqlite3.Binary(status)))
+        c.execute("INSERT or REPLACE INTO torrents VALUES (?, ?, ?, ?)", (magnet, sqlite3.Binary(torfile), sqlite3.Binary(status), save_path))
         db.commit()
         db.close()
 
@@ -347,8 +348,9 @@ class TorrentSession(QtCore.QThread):
             logging.info("importing %s" % t[0])
             entry = lt.bdecode(t[1])
             fastresumedata = t[2]
+            save_path = t[3]
             torrentinfo = lt.torrent_info(entry)
-            self.add_torrent_by_info(torrentinfo, fastresumedata)
+            self.add_torrent_by_info(torrentinfo, save_path=save_path, resumedata=fastresumedata)
         db.close()
         pass
 

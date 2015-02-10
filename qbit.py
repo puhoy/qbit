@@ -67,7 +67,7 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
 
     @QtCore.pyqtSlot()
     def btn_addTorrentFile_clicked(self):
-        path = QtGui.QFileDialog.getOpenFileName()
+        path = QtGui.QFileDialog.getOpenFileName(self.parent(), "choose torrent file", "",)
         if path is "":
             return
         try:
@@ -84,10 +84,20 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
         self.addByTorrentFile(path)
 
     def addByMagnet(self, mlink):
-        self.kju.put({'addmagnet': mlink})
+        storepath = self.askForPathToStore()
+        if storepath:
+            self.kju.put({'addmagnet': mlink,
+                          'storepath': storepath})
 
     def addByTorrentFile(self, fpath):
-        self.kju.put({'addtorrent': fpath})
+        storepath = self.askForPathToStore()
+        if storepath:
+            self.kju.put({'addtorrent': fpath,
+                          'storepath': storepath})
+
+    def askForPathToStore(self):
+        path = QtGui.QFileDialog.getExistingDirectory(self.parent(), "Pick folder to Store", "", QtGui.QFileDialog.ShowDirsOnly | QtGui.QFileDialog.DontResolveSymlinks)
+        return path
 
     @QtCore.pyqtSlot()
     def pauseTorrent(self, handle):
