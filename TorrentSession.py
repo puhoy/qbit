@@ -6,6 +6,8 @@ import time
 import os
 import sqlite3
 import logging
+
+from blocklist import Blocklist
 import datetime
 
 from queue import Queue
@@ -91,57 +93,7 @@ class TorrentSession(QtCore.QThread):
         #self.session.stop_natpmp()
         #self.session.stop_upnp()
 
-    def checkblocklist(self, path, url=None):
-        blockfile = path
 
-        self.statusbar.emit("%s - getting blocklist" % self.status)
-        url = "http://john.bitsurge.net/public/biglist.p2p.gz"
-        goodbefore = datetime.datetime.now() - datetime.timedelta(hours=5)
-
-        import urllib.request
-        if not os.path.exists(blockfile):
-            urllib.request.urlretrieve(url, blockfile)
-        if datetime.datetime.fromtimestamp(os.path.getctime(blockfile)) < goodbefore:
-            urllib.request.urlretrieve(url, blockfile)
-        else:
-            logging.info("blocklist is still fresh..")
-
-
-    def setup_blocklist(self):
-        blockfile = "blocklist.p2p.gz"
-
-        import gzip
-        self.checkblocklist(blockfile)
-
-        self.statusbar.emit("%s - setting blocklist" % self.status)
-        try:
-            f = gzip.open(blockfile)
-        except:
-            self.corrupt_list()
-            return
-        filter = lt.ip_filter()
-        exceptions = 0
-        for line in f.readlines():
-            if line.startswith(b'\n') or line.startswith(b'#'):
-                #we dont want empty lines or comments
-                pass
-            else:
-                fromto = line.split(b':')[-1].split(b'-')
-                try:
-                    filter.add_rule(fromto[0], fromto[1].split(b'\n')[0], 1)
-                except:
-                    print("exc: %s" % line.split(b':'))
-                    exceptions += 1
-                    if exceptions > 10:
-                        self.corrupt_list()
-                        break
-        self.session.set_ip_filter(filter)
-        self.statusbar.emit("%s" % self.status)
-        pass
-
-    def corrupt_list(self):
-        self.statusbar.emit("%s - !!! corrupt blocklist?" % self.status)
-        exit(0)
 
     def setup_db(self):
         dbfile = self.statdb
@@ -152,7 +104,6 @@ class TorrentSession(QtCore.QThread):
             c.execute("CREATE TABLE sessionstatus (settingname varchar PRIMARY KEY, status blob)")
             conn.commit()
             conn.close()
-
 
     def __del__(self):
         logging.info("torrentsession exits!")
@@ -204,6 +155,26 @@ class TorrentSession(QtCore.QThread):
         else:
             self.session.resume()
             self.status = 'running'
+
+    def setup_blocklist(self):
+        blocklist = Blocklist()
+
+        self.statusbar.emit("%s - getting & parsing blocklist" % self.status)
+        blocklist.setup_rules()
+        rules = blocklist.get_rules()
+
+        self.statusbar.emit("%s - setting blocklist" % self.status)
+        filter = lt.ip_filter()
+        exceptions = 0
+        for rule in rules:
+            try:
+                filter.add_rule(rule['from'], rule['to'], rule['block'])
+            except:
+                exceptions += 1
+                if exceptions > 10:
+                    return False
+        self.session.set_ip_filter(filter)
+        self.statusbar.emit("%s" % self.status)
 
     def run(self):
         self.statusbar.emit(self.status)
