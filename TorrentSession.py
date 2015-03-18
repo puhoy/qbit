@@ -16,6 +16,11 @@ from queue import Queue
 from PyQt4 import QtCore
 
 class TorrentSession(QtCore.QThread):
+    """
+    Backend for the TorrentSession
+
+    Controlled via input_queue (see handle_queue for details)
+    """
     statusbar = QtCore.pyqtSignal(str)
     torrent_updated = QtCore.pyqtSignal(object, object)  # handle, torrentinfo
     torrent_deleted = QtCore.pyqtSignal(object)
@@ -28,7 +33,7 @@ class TorrentSession(QtCore.QThread):
         self.settingname = 'defaultsetting'
         self.session = lt.session()
         self.handles = []
-        self.kju = queue
+        self.input_queue = queue
         self.state_str = ['queued', 'checking', 'downloading metadata', \
               'downloading', 'finished', 'seeding', 'allocating', 'checking fastresume']
         self.session.set_alert_mask(lt.alert.category_t.all_categories)
@@ -58,8 +63,12 @@ class TorrentSession(QtCore.QThread):
         self.setup_settings()
         self.setup_db()
 
-
     def setup_settings(self):
+        """
+        called by the init method. sets up some sane settings.
+
+        :return:
+        """
         #settings
         pesettings = lt.pe_settings()
         pesettings.in_enc_policy = lt.enc_policy.forced
@@ -93,9 +102,13 @@ class TorrentSession(QtCore.QThread):
         #self.session.stop_natpmp()
         #self.session.stop_upnp()
 
-
-
     def setup_db(self):
+        """
+        called by the init method.
+        sets up the sqlite database if there is none.
+
+        :return:
+        """
         dbfile = self.statdb
         if not os.path.exists(dbfile):
             conn = sqlite3.connect(dbfile)
@@ -110,17 +123,48 @@ class TorrentSession(QtCore.QThread):
         self.exit(0)
 
     def safe_shutdown(self):
-        self.end=True
+        """
+        sets the end variable which tells the run method to jump out
+        of the handling loop and trigger the save_handle for each handle.
+
+        :return:
+        """
+        self.end = True
+
 
     def handle_queue(self):
-        while not self.kju.empty():
-            d = self.kju.get()
+        """
+        gets & processes all messages in the queue.
+
+        possible every message is a dict.
+        possible messages:
+            {'addmagnet': magnetlink,
+            'storepath': path to store}  -- adds a magnetlink.
+
+            {'addtorrent': torrent_file_path,
+            'storepath': path to store}  -- adds a torrent file.
+
+            {'deltorrent': handle}  -- deletes the torrenthandle "handle"
+
+            {'pausetorrent': handle}  -- pauses the handle
+
+            {'pause': boolean}  -- pauses(if True) or unpauses the whole session
+
+            {'setprio': {
+                    'index': index,  -- index of the file in the torrenthandle
+                    'prio': prio,  -- priority to set
+                }
+            }
+        """
+
+        while not self.input_queue.empty():
+            d = self.input_queue.get()
             if d.get('addmagnet'):
                 self.add_magnetlink(d.get('addmagnet'), d.get('storepath'))
             elif d.get('addtorrent'):
                 self.add_torrent(d.get('addtorrent'), d.get('storepath'))
             elif d.get('deletetorrent'):
-                self.delTorrent(d.get('deletetorrent'))
+                self.del_torrent(d.get('deletetorrent'))
             elif d.get('shutdown'):
                 self.end = True
             elif d.get('pauseTorrent'):
@@ -145,10 +189,14 @@ class TorrentSession(QtCore.QThread):
                 index = d.get('setprio').get('index')
                 prio = d.get('setprio').get('prio')
                 handle = d.get('setprio').get('handle')
+                # TODO find out the possible priorities
+                # the documentation doesnt seem to have that information...
                 handle.file_priority(index, prio)
                 logging.info('new file priorities: %s ' % handle.file_priorities())
 
     def pause(self, what):
+        """ pauses or unpauses the session
+        """
         if what:
             self.session.pause()
             self.status = 'paused'
@@ -157,6 +205,13 @@ class TorrentSession(QtCore.QThread):
             self.status = 'running'
 
     def setup_blocklist(self):
+        """
+        this will setup the blocklist in the session.
+
+        in case that the blocklistfile doesnt exist or is older
+        than Blocklist().old_after_hours (5 hours by default) it will start a download which may take some time.
+        """
+        """TODO the parsing seems pretty ineffective. maybe i should do something."""
         blocklist = Blocklist()
 
         self.statusbar.emit("%s - getting & parsing blocklist" % self.status)
@@ -177,6 +232,15 @@ class TorrentSession(QtCore.QThread):
         self.statusbar.emit("%s" % self.status)
 
     def run(self):
+        """
+        the run method of the thread.
+
+        this will process all the handles and messages in the input_queue.
+        when safe_shutdown is called, it will trigger save_resume_data for every handle and wait for the alert
+        with the resume_data.
+        when every handle is deleted (after saving each resume_data), the session will be saved;
+        were done and the thread will exit.
+        """
         self.statusbar.emit(self.status)
         self.setup_blocklist()
         self.resume()
@@ -247,18 +311,40 @@ class TorrentSession(QtCore.QThread):
         return
 
     def add_magnetlink(self, magnetlink, save_path):
+        """
+        creates a handle for a magnetlink and adds it to the session
+
+        :param magnetlink: string with the magnetlink
+        :param save_path: string with the path to save
+        :return:
+        """
         logging.info("adding mlink")
         handle = lt.add_magnet_uri(self.session, magnetlink, {'save_path': save_path})
         self.handles.append(handle)
         self.torrent_added.emit(handle)
 
     def add_torrent(self, torrentfilepath, save_path):
+        """
+        creates a handle for a torrentfile and adds it to the session
+
+        :param torrentfilepath: string with the path to the torrentfile
+        :param save_path: string with the path to save
+        :return:
+        """
         logging.info("adding torrentfile")
         #info = lt.torrent_info(torrentfilepath)
         info = lt.torrent_info(lt.bdecode(open(torrentfilepath, 'rb').read()))
         self.add_torrent_by_info(info, save_path)
 
     def add_torrent_by_info(self, torrentinfo, save_path, resumedata=None):
+        """
+        needed to resume torrents by the saved resume_data
+
+        :param torrentinfo: the torrentinfo
+        :param save_path: path to save
+        :param resumedata: resume_data
+        :return:
+        """
         if not resumedata:
             logging.debug("no resume data!")
             handle = self.session.add_torrent({'ti': torrentinfo, 'save_path': save_path})
@@ -269,7 +355,7 @@ class TorrentSession(QtCore.QThread):
         self.handles.append(handle)
         self.torrent_added.emit(handle)
 
-    def delTorrent(self, handle):
+    def del_torrent(self, handle):
         """saves the resume data for torrent
         when done, save_resume_data_alert will be thrown, then its safe to really delete the torrent
         """
@@ -277,6 +363,14 @@ class TorrentSession(QtCore.QThread):
         self.torrent_deleted.emit(handle)
 
     def save(self, handle, resume_data):
+        """
+        called when the "save_resume_data_alert" is recieved while ending.
+        saves handle with resume_data to database
+
+        :param handle:
+        :param resume_data:
+        :return:
+        """
         save_path = handle.save_path()
         torrent = lt.create_torrent(handle.get_torrent_info())
         torfile = lt.bencode(torrent.generate())
@@ -291,6 +385,11 @@ class TorrentSession(QtCore.QThread):
         db.close()
 
     def save_state(self):
+        """
+        saves the session settings to db
+
+        :return:
+        """
         # create table sessionstatus (status blob)
         entry = self.session.save_state()
         encentry = lt.bencode(entry)
@@ -302,6 +401,12 @@ class TorrentSession(QtCore.QThread):
         db.close()
 
     def resume(self):
+        """
+        reads the sessionsettings from db file and sets them,
+        reads handles from db file and adds them to the session.
+
+        :return:
+        """
         #load state
         db = sqlite3.connect(self.statdb)
         c = db.cursor()
@@ -326,6 +431,12 @@ class TorrentSession(QtCore.QThread):
         pass
 
     def erase_all_torrents_from_db(self):
+        """
+        removes all torrents from the session.
+        done before the program quits to flush the db for the current torrents
+
+        :return:
+        """
         db = sqlite3.connect(self.statdb)
         c = db.cursor()
         c.execute("DELETE FROM torrents")
