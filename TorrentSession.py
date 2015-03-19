@@ -131,7 +131,6 @@ class TorrentSession(QtCore.QThread):
         """
         self.end = True
 
-
     def handle_queue(self):
         """
         gets & processes all messages in the queue.
