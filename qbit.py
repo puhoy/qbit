@@ -18,14 +18,30 @@ import functools
 class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
     deletetorrent = QtCore.pyqtSignal(object)
     def __init__(self, parent=None):
+        """
+        this creates the main window and connects the signals.
+
+        self.items keeps track of all the handles and corresponding informations
+        self.items[handle] =
+                    {'item': item,  -- QtGui.QTreeWidgetItem()
+                     'bar': bar,  -- QtGui.QProgressBar()
+                     'files': {}}  -- files[index] = {
+                                          'widget': QtGui.QTreeWidgetItem(["%s" % file.path])
+                                          }
+                    the files dict is set in set_filelist.
+
+        :param parent:
+        :return:
+        """
         super(Qbit_main, self).__init__(parent)
         #QtGui.QMainWindow.__init__(self, parent)
         self.setupUi(self)
+
         self.items = {}
 
         self.mapper = QtCore.QSignalMapper(self)
 
-        self.kju = Queue()
+        self.message_queue = Queue()
 
         addMenu = QtGui.QMenu()
         addFile = QtGui.QAction('Torrentfile', self)
@@ -40,7 +56,7 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
         self.actionPause.triggered.connect(self.pauseSession)
 
 
-        self.ts = TorrentSession(self.kju)
+        self.ts = TorrentSession(self.message_queue)
 
         self.state_str = self.ts.state_str
 
@@ -51,13 +67,14 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
 
         self.ts.start()
 
+    """
     def handleContext(self, pos):
         item = self.treeWidget_downloading.itemAt(pos)
         if item is not None:
             menu = QtGui.QMenu("Context Menu", self)
             menu.addAction("FOO")
             ret = menu.exec_(self.treeWidget_downloading.mapToGlobal(pos))
-
+    """
 
     @QtCore.pyqtSlot()
     def btn_addMagnetLink_clicked(self):
@@ -86,27 +103,35 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
     def addByMagnet(self, mlink):
         storepath = self.askForPathToStore()
         if storepath:
-            self.kju.put({'addmagnet': mlink,
+            self.message_queue.put({'addmagnet': mlink,
                           'storepath': storepath})
 
     def addByTorrentFile(self, fpath):
         storepath = self.askForPathToStore()
         if storepath:
-            self.kju.put({'addtorrent': fpath,
+            self.message_queue.put({'addtorrent': fpath,
                           'storepath': storepath})
 
     def askForPathToStore(self):
-        path = QtGui.QFileDialog.getExistingDirectory(self.parent(), "Pick folder to Store", "", QtGui.QFileDialog.ShowDirsOnly | QtGui.QFileDialog.DontResolveSymlinks)
+        """
+        opens a dialog for choosing a path
+
+        :return: a path string
+        """
+        path = QtGui.QFileDialog.getExistingDirectory(self.parent(),
+                                                      "Pick folder to Store",
+                                                      "",
+                                                      QtGui.QFileDialog.ShowDirsOnly | QtGui.QFileDialog.DontResolveSymlinks)
         return path
 
     @QtCore.pyqtSlot()
     def pauseTorrent(self, handle):
 
-        self.kju.put({'pauseTorrent': handle})
+        self.message_queue.put({'pauseTorrent': handle})
 
     @QtCore.pyqtSlot()
     def pauseSession(self):
-        self.kju.put({'pause': True})
+        self.message_queue.put({'pause': True})
 
     @QtCore.pyqtSlot(object)
     def deleteTorrent(self, handle):
@@ -116,18 +141,22 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
                                        QtGui.QMessageBox.Yes,
                                        QtGui.QMessageBox.No)
         if reply == QtGui.QMessageBox.Yes:
-            self.kju.put({'deletetorrent': handle})
+            self.message_queue.put({'deletetorrent': handle})
 
 
     @QtCore.pyqtSlot(object)
     def makeitem(self, handle):
-        print('making item!')
+        """
+        adds a new item (which represents a torrent handle) to the downloading list
+
+        :param handle:
+        :return:
+        """
+
         item = QtGui.QTreeWidgetItem()
 
         item.setSizeHint(0, QtCore.QSize(400, 30))
         item.setSizeHint(1, QtCore.QSize(80, 30))
-
-
 
         self.treeWidget_downloading.resizeColumnToContents(0)
         bar = QtGui.QProgressBar()
@@ -154,6 +183,13 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
 
     @QtCore.pyqtSlot(object, object)
     def updateitem(self, handle, status):
+        """
+
+
+        :param handle:
+        :param status:
+        :return:
+        """
         stat = status
         state_str = self.state_str[stat.state]
         if status.paused:
@@ -216,7 +252,7 @@ class Qbit_main(QtGui.QMainWindow, qbit_main.Ui_MainWindow):
         # void file_priority (int index, int priority) const;
         #handle.file_priority(fileindex, prio)
         logging.info('setting prio')
-        self.kju.put({'setprio': {'index': fileindex,
+        self.message_queue.put({'setprio': {'index': fileindex,
                                   'prio': prio,
                                   'handle': handle}})
         pass
@@ -243,7 +279,7 @@ def main():
     trayIcon.show()
     ret = app.exec_()
     print("deleting Torrent Session..")
-    main.kju.put({'shutdown': True})
+    main.message_queue.put({'shutdown': True})
     main.ts.wait()
     print("...aaaand deleted!")
     sys.exit(ret)
